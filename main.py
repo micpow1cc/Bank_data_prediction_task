@@ -7,7 +7,6 @@ from sklearn.metrics import accuracy_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix
 from sklearn import metrics
-from sklearn.metrics import roc_curve
 from sklearn.metrics import roc_auc_score
 
 
@@ -28,6 +27,7 @@ def load_and_preparing():
     df['loan'] = df['loan'].astype('category')
     df['test_control_flag'] = df['test_control_flag'].astype('category')
     df['y'] = df['y'].astype('category')
+    # zmiana yes no : 1 0 , by wykreslic krzywa ROC
     df['y'].replace(to_replace="no", value=0, inplace=True)
     df['y'].replace(to_replace="yes", value=1, inplace=True)
     df['contact'] = df['contact'].astype('category')
@@ -55,7 +55,7 @@ def effectiveness_of_last_campaign():
 
 
 def randomforest_model():
-    global df_campaign, train_df_campaign, rf,profile, cv,y_pred
+    global df_campaign, train_df_campaign, rf,profile, cv,y_pred,test_df_campaign,test_target
     # najpierw na całym zbiorze danych najważniejsze
     # atrybuty przez które ktos wezmie udział w ,
     # kampanii. A potem na caampaign group o te inne
@@ -63,12 +63,12 @@ def randomforest_model():
     # zamiana zmiennych category na binarne
     y_column = pd.DataFrame((df_campaign["y"]))
     # usuwanie kolumn mogących źle wplynąć na ACC
+    profile = df_campaign
     df_campaign = df_campaign.drop(columns=['y', 'Unnamed: 0', 'pdays'])
 
     #'y', 'Unnamed: 0', 'pdays' TPR - 60.9 %
     df_campaign = pd.get_dummies(df_campaign)
     df_campaign = pd.concat([df_campaign, y_column], axis=1)
-    profile = df_campaign
     # podział zmiennych i uczenie modelu
     target = df_campaign['y']
     df_campaign = df_campaign.drop('y', axis=1)
@@ -93,29 +93,6 @@ def randomforest_model():
     #cv.fit(train_df_campaign, train_target.values.ravel())
 
     y_pred = rf.predict(test_df_campaign)
-    print(y_pred)
-
-    #y_pred_proba = rf.predict(test_df_campaign)[:,1]
-    #print(y_pred_proba)
-    """"
-    ns_auc = roc_auc_score(test_target, ns_probs)
-    lr_auc = roc_auc_score(test_target, lr_probs)
-    print('No Skill: ROC AUC=%.3f' % (ns_auc))
-    print('Logistic: ROC AUC=%.3f' % (lr_auc))
-    ns_fpr, ns_tpr, _ = roc_curve(test_target, ns_probs)
-    lr_fpr, lr_tpr, _ = roc_curve(test_target, lr_probs)
-
-    # plot the roc curve for the model
-    plt.plot(ns_fpr, ns_tpr, linestyle='--', label='No Skill')
-    plt.plot(lr_fpr, lr_tpr, marker='.', label='Logistic')
-    # axis labels
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    # show the legend
-    plt.legend()
-    # show the plot
-    plt.show()
-    """
     #conf_mat = confusion_matrix(test_target, y_pred,labels=["test","prediction"])
     print('Accuracy: %.3f' % accuracy_score(test_target, y_pred))
     #print(conf_mat)
@@ -123,44 +100,11 @@ def randomforest_model():
     print("TN ",tn," FP ",fp," FN",fn," TP ",tp)
     print("True positive rate:",round(tp/(tp+fp),3)*100,"%")
     print("True negative rate:",round(tn/(tn+fn),3)*100,"%")
-    """
-    fpr, tpr, _ = metrics.roc_curve(test_target, y_pred_proba)
-    plt.plot(fpr, tpr)
-    plt.ylabel('True Positive Rate')
-    plt.xlabel('False Positive Rate')
-    plt.show()
-    """
-    """
-    y_pred = test_df_campaign.to_numpy()
-    print(type(y_pred))
-    print(y_pred)
-    y_pred_transpose = y_pred.transpose()
-    print(y_pred_transpose)
-    lr_probs = rf.predict(y_pred_transpose)[:, 1]
-    ns_auc = roc_auc_score(test_target, ns_probs)
-    lr_auc = roc_auc_score(test_target, lr_probs)
-    print('No Skill: ROC AUC=%.3f' % (ns_auc))
-    print('Logistic: ROC AUC=%.3f' % (lr_auc))
-    ns_fpr, ns_tpr, _ = roc_curve(test_target, ns_probs)
-    lr_fpr, lr_tpr, _ = roc_curve(test_target, lr_probs)
-    """
 # ACC 86.2%
 # TPR 58.8
 # TNR 88.3%
 #print(y_pred)
-    # Krzywa ROC
-    x = np.linspace(0,1,10)
-    y=x
-    y_pred_proba = rf.predict_proba(test_df_campaign)[::, 1]
-    fpr, tpr, _ = metrics.roc_curve(test_target, y_pred_proba)
-    plt.plot(fpr, tpr, label="RandomForest")
-    plt.plot(x,y, label="No skill")
-    plt.title('ROC curve')
 
-    plt.ylabel('True Positive Rate')
-    plt.xlabel('False Positive Rate')
-    plt.legend(loc='upper left')
-    plt.show()
 
 def importances_plot():
     global train_df_campaign
@@ -191,11 +135,38 @@ def importances_plot():
 
 def profile_of_person():    # Ktore osoby pytac:
 
-    profile_no, profile_yes = [x for _, x in profile.groupby(profile['y'] == "yes")]
+    profile_no, profile_yes = [x for _, x in profile.groupby(profile['y'] == 1)]
     age = np.mean(profile_yes.age)
     age_sd = np.std(profile_yes.age)
 
+    #print(profile_yes['job'].value_counts())
+    #print(profile_yes['marital'].value_counts())
+    #print(profile_yes['education'].value_counts())
+    #print(profile_yes['default'].value_counts())
+    #print(profile_yes['loan'].value_counts())
+    #print(profile_yes['contact'].value_counts())
+
+    print(profile_yes['duration'].value_counts())
+
     print('His age is:  %.3f' % age,'+/-  %.3f'  % age_sd)
+    print('Thier most common job is : admin.,blue-collar,technican')
+    print('Thier most common marital status is : high.school,university.degree')
+    print('Almost everybody dont have credit in default')
+    print('Big majority dont have a loan')
+    print('Big majority of them were ellular> telephone')
+    print('People wanted to subscribe to term deposit most often in may,july,august')
+    print('There is no dependence in what day people want to subscribe to term deposit')
+    print('The most often people')
+
+    bins = [0, 60, 120, 180, 240, 300, 360, 420, 480, 540,600, 660,720,780,840,900,960,1020,1080,1140,3200]
+    cat = pd.cut(x=profile_yes['duration'],bins=bins,include_lowest=True)
+    plt.title("Duration of talking in seconds")
+    plt.xlabel("Seconds [s]")
+    plt.ylabel("Quantity")
+    ax = cat.value_counts(sort=False).plot.bar(rot=90, color="black", figsize=(30, 20))
+    plt.show()
+
+
     #job_admin.  job_blue-collar  job_entrepreneur  job_housemaid  job_management  job_retired  job_self-employed  job_services  job_student  job_technician  job_unemployed  job_unknown
 
 def display(results): # metoda pozwalajaca wyswietlic najlepsze parametry max_depth i n_estimators
@@ -210,14 +181,30 @@ def display(results): # metoda pozwalajaca wyswietlic najlepsze parametry max_de
 
 
 def ROC_curve():
-    print("roc")
+    x = np.linspace(0, 1, 10)
+    y = x
 
+    y_pred_proba = rf.predict_proba(test_df_campaign)[::, 1]
+    fpr, tpr, _ = metrics.roc_curve(test_target, y_pred_proba)
+    auc = roc_auc_score(test_target, y_pred_proba)
+    label = 'RandomForest,ROC AUC=', round(auc, 3)
+    plt.plot(fpr, tpr, label=label)
+    plt.plot(x, y, label="No skill")
+    plt.title('ROC curve')
+
+    plt.ylabel('True Positive Rate')
+    plt.xlabel('False Positive Rate')
+    plt.legend(loc='upper left')
+    plt.show()
+def neural_network():
+        print("")
 
 load_and_preparing()
 effectiveness_of_last_campaign()
 randomforest_model()
 importances_plot()
 profile_of_person()
+ROC_curve()
 #display(cv)
 
 
