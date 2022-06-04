@@ -8,12 +8,10 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix
 from sklearn import metrics
 from sklearn.metrics import roc_auc_score
-
+from sklearn.model_selection import GridSearchCV
 
 # opcja co pozwala wyswietlic caly df
 pd.set_option('expand_frame_repr', False)
-
-
 def load_and_preparing():
     global df, df_campaign
     # zaladowanie danych
@@ -45,17 +43,16 @@ def load_and_preparing():
     # 16474 ostatni index osoby w campagin group
     # procent osob, ktorym udalo sie zaoferowac lokate
     df_control, df_campaign = [x for _, x in df.groupby(df['test_control_flag'] == "campaign group")]
-
+    #brakujące vartosci w kolumnie cons.price.idx zastąpiono średnią
+    mean_value = df['cons.price.idx'].mean()
+    df['cons.price.idx'].fillna(value=mean_value,inplace=True)
 
 def effectiveness_of_last_campaign():
     df_campaign_y_values = df_campaign['y'].value_counts()
     print(df_campaign_y_values)
     print("skutecznosc kampanii wynosiła:", 2484 / 24712 * 100, "%")
-
-
-
 def randomforest_model():
-    global df_campaign, train_df_campaign, rf,profile, cv,y_pred,test_df_campaign,test_target
+    global df_campaign, train_df_campaign, rf,profile, cv,y_pred,test_df_campaign,test_target,parameters
     # najpierw na całym zbiorze danych najważniejsze
     # atrybuty przez które ktos wezmie udział w ,
     # kampanii. A potem na caampaign group o te inne
@@ -87,7 +84,7 @@ def randomforest_model():
     # parametry n_estimators = 50 i max_depth wybrane przy pomocy metody walidacji krzyżowej GridSearchCV
     rf = RandomForestClassifier(criterion='gini', n_estimators=50, random_state=1,max_depth=50)
     rf.fit(train_df_campaign, train_target)
-    ns_probs = [0 for _ in range(len(test_target))]
+    #ns_probs = [0 for _ in range(len(test_target))]
 
     #cv = GridSearchCV(rf, parameters, cv=5)
     #cv.fit(train_df_campaign, train_target.values.ravel())
@@ -118,21 +115,6 @@ def importances_plot():
     plt.xticks(range(train_df_campaign.shape[1]), df_campaign.columns[sorted_indices], rotation=90)
     plt.tight_layout()
     plt.show()
-    """"
-    plt.rcdefaults()
-    fig,ax = plt.subplots()
-    labels = list(train_df_campaign.shape[1])
-    y_pos = list(importances)
-    ax.barh(y_pos,labels, align='center')
-    ax.set_yticks(y_pos,labels=labels)
-    ax.invert_yaxis()
-    ax.set_xlabel('Importance')
-    ax.set_title('Importance of variables')
-    plt.show()
-    """
-
-
-
 def profile_of_person():    # Ktore osoby pytac:
 
     profile_no, profile_yes = [x for _, x in profile.groupby(profile['y'] == 1)]
@@ -168,7 +150,6 @@ def profile_of_person():    # Ktore osoby pytac:
 
 
     #job_admin.  job_blue-collar  job_entrepreneur  job_housemaid  job_management  job_retired  job_self-employed  job_services  job_student  job_technician  job_unemployed  job_unknown
-
 def display(results): # metoda pozwalajaca wyswietlic najlepsze parametry max_depth i n_estimators
     print(f'Best parameters are: {results.best_params_}')
     print("\n")
@@ -177,9 +158,6 @@ def display(results): # metoda pozwalajaca wyswietlic najlepsze parametry max_de
     params = results.cv_results_['params']
     for mean,std,params in zip(mean_score,std_score,params):
         print(f'{round(mean,3)} + or -{round(std,3)} for the {params}')
-
-
-
 def ROC_curve():
     x = np.linspace(0, 1, 10)
     y = x
@@ -196,15 +174,40 @@ def ROC_curve():
     plt.xlabel('False Positive Rate')
     plt.legend(loc='upper left')
     plt.show()
-def neural_network():
-        print("")
+def Random_forest_2():
+    global df,cv
+    parameters = {
+        "n_estimators": [5, 10, 50, 100, 250],
+        "max_depth": [2, 4, 8, 16, 32, None]
+
+    }
+    y_column = pd.DataFrame((df["y"]))
+    # usuwanie kolumn mogących źle wplynąć na ACC
+    df = df.drop(columns=['y', 'Unnamed: 0', 'pdays','contact','day_of_week','duration','campaign','month'])
+    df = pd.get_dummies(df)
+    df = pd.concat([df, y_column], axis=1)
+    # podział zmiennych i uczenie modelu
+    target = df['y']
+    df = df.drop('y', axis=1)
+    X_train, X_test, Y_train, Y_test = train_test_split(df,target,test_size=0.25, random_state=42)
+    rf = RandomForestClassifier(criterion='gini', n_estimators=250, random_state=1,max_depth=8)
+    #cv = GridSearchCV(rf, parameters, cv=5)
+    #cv.fit(X_train, Y_train.values.ravel())
+    rf.fit(X_train,Y_train)
+    y_pred = rf.predict(X_test)
+    print('Accuracy: %.3f' % accuracy_score(Y_test, y_pred))
+    tn, fp, fn, tp = confusion_matrix(Y_test, y_pred).ravel()
+    print("TN ", tn, " FP ", fp, " FN", fn, " TP ", tp)
+    print("True positive rate:", round(tp / (tp + fp), 3) * 100, "%")
+    print("True negative rate:", round(tn / (tn + fn), 3) * 100, "%")
 
 load_and_preparing()
-effectiveness_of_last_campaign()
-randomforest_model()
-importances_plot()
-profile_of_person()
-ROC_curve()
+#effectiveness_of_last_campaign()
+#randomforest_model()
+#importances_plot()
+#profile_of_person()
+#ROC_curve()
+Random_forest_2()
 #display(cv)
 
 
