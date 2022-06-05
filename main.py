@@ -9,6 +9,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn import metrics
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import GridSearchCV
+import xgboost as xgb
 
 # opcja co pozwala wyswietlic caly df
 pd.set_option('expand_frame_repr', False)
@@ -52,7 +53,7 @@ def effectiveness_of_last_campaign():
     print(df_campaign_y_values)
     print("skutecznosc kampanii wynosiła:", 2484 / 24712 * 100, "%")
 def randomforest_model():
-    global df_campaign, train_df_campaign, rf,profile, cv,y_pred,test_df_campaign,test_target,parameters
+    global df_campaign, train_df_campaign, rf,profile, cv,y_pred,test_df_campaign,test_target,parameters, train_target
     # najpierw na całym zbiorze danych najważniejsze
     # atrybuty przez które ktos wezmie udział w ,
     # kampanii. A potem na caampaign group o te inne
@@ -103,16 +104,15 @@ def randomforest_model():
 #print(y_pred)
 
 
-def importances_plot():
-    global train_df_campaign
-    train_df_campaign = pd.DataFrame(
-        train_df_campaign)  # to zrobione po to bo by wykreslic importance of variables musi byc dataframe pandas
+def importances_plot(train_df,df):
+    train_df = pd.DataFrame(
+        train_df)  # to zrobione po to bo by wykreslic importance of variables musi byc dataframe pandas
     importances = rf.feature_importances_
     sorted_indices = np.argsort(importances)[::-1]
 
     plt.title('Feature Importance')
-    plt.bar(range(train_df_campaign.shape[1]), importances[sorted_indices], align='center')
-    plt.xticks(range(train_df_campaign.shape[1]), df_campaign.columns[sorted_indices], rotation=90)
+    plt.bar(range(train_df.shape[1]), importances[sorted_indices], align='center')
+    plt.xticks(range(train_df.shape[1]), df.columns[sorted_indices], rotation=90)
     plt.tight_layout()
     plt.show()
 def profile_of_person():    # Ktore osoby pytac:
@@ -158,16 +158,16 @@ def display(results): # metoda pozwalajaca wyswietlic najlepsze parametry max_de
     params = results.cv_results_['params']
     for mean,std,params in zip(mean_score,std_score,params):
         print(f'{round(mean,3)} + or -{round(std,3)} for the {params}')
-def ROC_curve():
+def ROC_curve(test_df,test_Y):
     x = np.linspace(0, 1, 10)
     y = x
 
-    y_pred_proba = rf.predict_proba(test_df_campaign)[::, 1]
-    fpr, tpr, _ = metrics.roc_curve(test_target, y_pred_proba)
-    auc = roc_auc_score(test_target, y_pred_proba)
+    y_pred_proba = rf.predict_proba(test_df)[::, 1]
+    fpr, tpr, _ = metrics.roc_curve(test_Y, y_pred_proba)
+    auc = roc_auc_score(test_Y, y_pred_proba)
     label = 'RandomForest,ROC AUC=', round(auc, 3)
     plt.plot(fpr, tpr, label=label)
-    plt.plot(x, y, label="No skill")
+    plt.plot(x, y, label="Random choosing")
     plt.title('ROC curve')
 
     plt.ylabel('True Positive Rate')
@@ -200,15 +200,27 @@ def Random_forest_2():
     print("TN ", tn, " FP ", fp, " FN", fn, " TP ", tp)
     print("True positive rate:", round(tp / (tp + fp), 3) * 100, "%")
     print("True negative rate:", round(tn / (tn + fn), 3) * 100, "%")
+def XGboost():
+    global train_df_campaign, test_df_campaign, train_target, test_target
+    xg_reg = xgb.XGBRegressor(objective='multi:softprob',colsample_bytree = 0.3, max_depth = 5,alpha=10,n_estimators=10)
+    xg_reg.fit(train_df_campaign,train_target)
+    preds= xg_reg.predict(test_df_campaign)
+    print('Accuracy: %.3f' % accuracy_score(test_target, preds))
 
-load_and_preparing()
-#effectiveness_of_last_campaign()
-#randomforest_model()
-#importances_plot()
-#profile_of_person()
-#ROC_curve()
-Random_forest_2()
-#display(cv)
+
+
+
+if __name__ == "__main__":
+
+    load_and_preparing()
+    #effectiveness_of_last_campaign()
+    randomforest_model()
+    #importances_plot(train_df_campaign,df_campaign)
+    #profile_of_person()
+    #ROC_curve(test_df_campaign,test_target)
+    #Random_forest_2()
+    XGboost()
+    #display(cv)
 
 
 
