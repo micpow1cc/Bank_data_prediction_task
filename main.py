@@ -1,4 +1,3 @@
-import re
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,7 +9,7 @@ from sklearn import metrics
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import GridSearchCV
 import xgboost as xgb
-
+from statsmodels.stats.proportion import proportions_ztest
 # opcja co pozwala wyswietlic caly df
 pd.set_option('expand_frame_repr', False)
 def load_and_preparing():
@@ -38,20 +37,18 @@ def load_and_preparing():
     df['precious'] = df['previous'].astype('float64')
     df['poutcome'] = df['poutcome'].astype('category')
     pdays_values = df['pdays'].value_counts()
-    # print(pdays_values)
     # usuniecie kolumn na potrzebe predykcji na caly dataset
     df.drop(['contact', 'month', 'duration', 'campaign', 'pdays'], axis=1)
-    # 16474 ostatni index osoby w campagin group
-    # procent osob, ktorym udalo sie zaoferowac lokate
+
     df_control, df_campaign = [x for _, x in df.groupby(df['test_control_flag'] == "campaign group")]
     #brakujące vartosci w kolumnie cons.price.idx zastąpiono średnią
     mean_value = df['cons.price.idx'].mean()
     df['cons.price.idx'].fillna(value=mean_value,inplace=True)
-
 def effectiveness_of_last_campaign():
     df_campaign_y_values = df_campaign['y'].value_counts()
     print(df_campaign_y_values)
     print("skutecznosc kampanii wynosiła:", 2484 / 24712 * 100, "%")
+# rf dla kampanii
 def randomforest_model():
     global df_campaign, train_df_campaign, rf,profile, cv,y_pred,test_df_campaign,test_target,parameters, train_target
     # najpierw na całym zbiorze danych najważniejsze
@@ -85,37 +82,34 @@ def randomforest_model():
     # parametry n_estimators = 50 i max_depth wybrane przy pomocy metody walidacji krzyżowej GridSearchCV
     rf = RandomForestClassifier(criterion='gini', n_estimators=50, random_state=1,max_depth=50)
     rf.fit(train_df_campaign, train_target)
-    #ns_probs = [0 for _ in range(len(test_target))]
 
     #cv = GridSearchCV(rf, parameters, cv=5)
     #cv.fit(train_df_campaign, train_target.values.ravel())
 
     y_pred = rf.predict(test_df_campaign)
     #conf_mat = confusion_matrix(test_target, y_pred,labels=["test","prediction"])
+    print("RandomForest1 results for campaign:")
+
     print('Accuracy: %.3f' % accuracy_score(test_target, y_pred))
     #print(conf_mat)
     tn, fp, fn, tp = confusion_matrix(test_target,y_pred).ravel()
     print("TN ",tn," FP ",fp," FN",fn," TP ",tp)
     print("True positive rate:",round(tp/(tp+fp),3)*100,"%")
-    print("True negative rate:",round(tn/(tn+fn),3)*100,"%")
-# ACC 86.2%
-# TPR 58.8
-# TNR 88.3%
-#print(y_pred)
+    print("True negative rate:",round(tn/(tn+fn),3)*100,"%") # f # dla kampanii
 
-
-def importances_plot(train_df,df):
+def importances_plot(classifier,train_df,zbior_danych,nazwa):
     train_df = pd.DataFrame(
         train_df)  # to zrobione po to bo by wykreslic importance of variables musi byc dataframe pandas
-    importances = rf.feature_importances_
+    importances = classifier.feature_importances_
     sorted_indices = np.argsort(importances)[::-1]
+    plt.title(f'feature importances for {nazwa}')
+    plt.bar(range(train_df.shape[1]), importances[sorted_indices], align='center',color="black")
+    plt.xticks(range(train_df.shape[1]), zbior_danych.columns[sorted_indices], rotation=90)
 
-    plt.title('Feature Importance')
-    plt.bar(range(train_df.shape[1]), importances[sorted_indices], align='center')
-    plt.xticks(range(train_df.shape[1]), df.columns[sorted_indices], rotation=90)
     plt.tight_layout()
     plt.show()
 def profile_of_person():    # Ktore osoby pytac:
+    global profile
 
     profile_no, profile_yes = [x for _, x in profile.groupby(profile['y'] == 1)]
     age = np.mean(profile_yes.age)
@@ -138,7 +132,6 @@ def profile_of_person():    # Ktore osoby pytac:
     print('Big majority of them were ellular> telephone')
     print('People wanted to subscribe to term deposit most often in may,july,august')
     print('There is no dependence in what day people want to subscribe to term deposit')
-    print('The most often people')
 
     bins = [0, 60, 120, 180, 240, 300, 360, 420, 480, 540,600, 660,720,780,840,900,960,1020,1080,1140,3200]
     cat = pd.cut(x=profile_yes['duration'],bins=bins,include_lowest=True)
@@ -158,24 +151,31 @@ def display(results): # metoda pozwalajaca wyswietlic najlepsze parametry max_de
     params = results.cv_results_['params']
     for mean,std,params in zip(mean_score,std_score,params):
         print(f'{round(mean,3)} + or -{round(std,3)} for the {params}')
-def ROC_curve(test_df,test_Y):
+def ROC_curve(classifier,test_df,test_Y,nazwa,classifier2,second_test_df,second_test_Y,nazwa2):
     x = np.linspace(0, 1, 10)
     y = x
 
-    y_pred_proba = rf.predict_proba(test_df)[::, 1]
+    y_pred_proba = classifier.predict_proba(test_df)[::, 1]
+    y_pred_proba2 =classifier2.predict_proba(second_test_df)[::, 1]
     fpr, tpr, _ = metrics.roc_curve(test_Y, y_pred_proba)
+    fpr2,tpr2,_ = metrics.roc_curve(second_test_Y,y_pred_proba2)
     auc = roc_auc_score(test_Y, y_pred_proba)
-    label = 'RandomForest,ROC AUC=', round(auc, 3)
+    auc2 = roc_auc_score(second_test_Y,y_pred_proba2)
+    label = f'{nazwa},AUC=', round(auc, 3)
+    label2 =f'{nazwa2},AUC=', round(auc2, 3)
     plt.plot(fpr, tpr, label=label)
+    plt.plot(fpr2,tpr2,label=label2)
     plt.plot(x, y, label="Random choosing")
+
     plt.title('ROC curve')
 
     plt.ylabel('True Positive Rate')
     plt.xlabel('False Positive Rate')
     plt.legend(loc='upper left')
     plt.show()
+# rf2 profil osoby
 def Random_forest_2():
-    global df,cv
+    global df,cv,X_train, X_test, Y_train, Y_test,rf2,target
     parameters = {
         "n_estimators": [5, 10, 50, 100, 250],
         "max_depth": [2, 4, 8, 16, 32, None]
@@ -190,38 +190,106 @@ def Random_forest_2():
     target = df['y']
     df = df.drop('y', axis=1)
     X_train, X_test, Y_train, Y_test = train_test_split(df,target,test_size=0.25, random_state=42)
-    rf = RandomForestClassifier(criterion='gini', n_estimators=250, random_state=1,max_depth=8)
+    rf2 = RandomForestClassifier(criterion='gini', n_estimators=250, random_state=1,max_depth=8)
     #cv = GridSearchCV(rf, parameters, cv=5)
     #cv.fit(X_train, Y_train.values.ravel())
-    rf.fit(X_train,Y_train)
-    y_pred = rf.predict(X_test)
+    rf2.fit(X_train,Y_train)
+    y_pred = rf2.predict(X_test)
+    print("RandomForest2 for all results:")
+
     print('Accuracy: %.3f' % accuracy_score(Y_test, y_pred))
     tn, fp, fn, tp = confusion_matrix(Y_test, y_pred).ravel()
     print("TN ", tn, " FP ", fp, " FN", fn, " TP ", tp)
     print("True positive rate:", round(tp / (tp + fp), 3) * 100, "%")
     print("True negative rate:", round(tn / (tn + fn), 3) * 100, "%")
+#XGboost dla kampanii
 def XGboost():
-    global train_df_campaign, test_df_campaign, train_target, test_target
-    xg_reg = xgb.XGBRegressor(objective='multi:softprob',colsample_bytree = 0.3, max_depth = 5,alpha=10,n_estimators=10)
-    xg_reg.fit(train_df_campaign,train_target)
-    preds= xg_reg.predict(test_df_campaign)
-    print('Accuracy: %.3f' % accuracy_score(test_target, preds))
+    global train_df_campaign, test_df_campaign, train_target, test_target,cv, X_train, X_test, Y_train, Y_test,xg_reg,train_xgb,test_xgb,train_xgb_target,test_xgb_target
+    parameters = {
+        "n_estimators": [5, 10, 50, 100, 250],
+        "max_depth": [2, 4, 8, 16, 32, None]
 
+    }
+    train_xgb=train_df_campaign
+    test_xgb=test_df_campaign
+    train_xgb_target=train_target
+    test_xgb_target=test_target
 
+    xg_reg = xgb.XGBClassifier(objective='binary:logistic',colsample_bytree = 0.3, max_depth = 4,alpha=10,n_estimators=100)
+    # TPR 65.6% dla colsample_bytree = 0.3, max_depth = 5,alpha=10,n_estimators=10
+    #cv = GridSearchCV(xg_reg, parameters, cv=5)
+    #cv.fit(train_df_campaign, train_target.values.ravel())
+    xg_reg.fit(train_xgb,train_xgb_target)
 
+    preds= xg_reg.predict(test_xgb)
+    print("XGboostClassifier for campaign results:")
+    print('Accuracy: %.3f' % accuracy_score(test_xgb_target, preds))
+    tn, fp, fn, tp = confusion_matrix(test_xgb_target, preds).ravel()
+    print("TN ", tn, " FP ", fp, " FN", fn, " TP ", tp)
+    print("True positive rate:", round(tp / (tp + fp), 3) * 100, "%")
+    print("True negative rate:", round(tn / (tn + fn), 3) * 100, "%")
+
+# XGboost2 profil osoby
+
+def XGboost2():
+    global train_df_campaign, test_df_campaign, train_target, test_target,cv, X_train, X_test, Y_train, Y_test,xg_reg2,df,X_train2,X_test2,Y_train2,Y_test2,target
+    parameters = {
+        "n_estimators": [5, 10, 50, 100, 250],
+        "max_depth": [2, 4, 8, 16, 32, None]
+
+    }
+    target2 = target
+    X_train2, X_test2, Y_train2, Y_test2 = train_test_split(df,target2,test_size=0.25, random_state=42)
+    xg_reg2 = xgb.XGBClassifier(objective='binary:logistic',colsample_bytree = 0.3, max_depth = 4,alpha=10,n_estimators=100)
+    # TPR 65.6% dla colsample_bytree = 0.3, max_depth = 5,alpha=10,n_estimators=10
+    #cv = GridSearchCV(xg_reg, parameters, cv=5)
+    #cv.fit(X_train, Y_train.values.ravel())
+    xg_reg2.fit(X_train2,Y_train2)
+
+    preds= xg_reg2.predict(X_test2)
+    print("XGboostClassifier for all results:")
+    print('Accuracy: %.3f' % accuracy_score(Y_test2, preds))
+    tn, fp, fn, tp = confusion_matrix(Y_test2, preds).ravel()
+    print("TN ", tn, " FP ", fp, " FN", fn, " TP ", tp)
+    print("True positive rate:", round(tp / (tp + fp), 3) * 100, "%")
+    print("True negative rate:", round(tn / (tn + fn), 3) * 100, "%")
+
+def does_clasiffier_is_better_than_random():
+    significance = 0.05
+    # p2=64% , poprzednia kampania p1=50% , wybrano klasyfikator Rf2 z powodu największego współczynnika TPR
+    sample_success = 3179 # wartosc sample succes jest wyliczona z proporcji TPR i wartosci z ostatniej kampanii
+    # sample_succes = 2484*64/100
+    sample_size = 24712
+    # Ho -> p1=p2
+    # H1 -> p1<p2
+    null_hypothesis = 0.50
+
+    stat, p_value = proportions_ztest(count=sample_success, nobs=sample_size, value=null_hypothesis,
+                                      alternative='smaller')
+    # report
+    print('z_stat: %0.3f, p_value: %0.3f' % (stat, p_value))
+    if p_value > significance:
+        print("przyjmujemy hipoteze zerową")
+    else:
+        print("odrzucami hipoteze zerowa - sugeruje prawdziwosc hipotezy alternatywnej")
+    # biorąc pod uwagę dane z wczesniejszej kampanii, której wydajność wynosi ~10%, wybrany model, może zwiększyć wydajność następnej kampanii do ~12.9%.
 
 if __name__ == "__main__":
+    rf_1 = "Random forest for campaign data"
+    rf_2 = "Random forest for all data"
+    xg_reg_1 = "XGboost for campaign data"
+    xg_reg_2 = "XGboost for all data"
 
     load_and_preparing()
-    #effectiveness_of_last_campaign()
+    effectiveness_of_last_campaign()
     randomforest_model()
-    #importances_plot(train_df_campaign,df_campaign)
-    #profile_of_person()
-    #ROC_curve(test_df_campaign,test_target)
-    #Random_forest_2()
+    profile_of_person()
+    Random_forest_2()
     XGboost()
+    XGboost2()
     #display(cv)
-
-
+    ROC_curve(rf2,X_test, Y_test, rf_2,xg_reg2,X_test2,Y_test2,xg_reg_2)
+    importances_plot(xg_reg2,X_test2,df,xg_reg_2)
+    #does_clasiffier_is_better_than_random()
 
 
